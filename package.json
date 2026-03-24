@@ -1,4 +1,11 @@
 {
+  "name": "the-big-money",
+  "version": "1.0.0",
+  "description": "Polymarket Beast Engine",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
     "express": "^5.2.1",
     "luxon": "^3.7.2",
