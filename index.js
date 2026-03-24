@@ -29,12 +29,12 @@ binanceWS.on('message', (data) => {
     const nextBoundary = Math.ceil(now / msIn5Min) * msIn5Min;
     const secondsLeft = Math.floor((nextBoundary - now) / 1000);
 
+    // --- עדכון קריטי: איפוס מחיר יעד בכל תחילת סבב ---
     if (!lastClosePrice || secondsLeft >= 299) {
         lastClosePrice = parseFloat(k.o);
     }
 
     prices.push(price);
-    // הגבלת המערך ל-200 כדי למנוע קריסת זיכרון בשרת מרוחק
     if (prices.length > 200) prices.shift();
 
     const rsiVal = calculateRSI(prices);
@@ -71,6 +71,9 @@ binanceWS.on('message', (data) => {
         });
 
         if (history.length > 10) history.pop(); 
+
+        // עדכון מחיר יעד לסבב הבא ברגע שהנר נסגר
+        lastClosePrice = price; 
 
         candles.push({ h: parseFloat(k.h), l: parseFloat(k.l), c: price });
         if (candles.length > 20) candles.shift();
@@ -138,7 +141,6 @@ function checkRSIDivergence(price, rsi) {
     return 'None';
 }
 
-// שינוי קריטי עבור פריסה בענן (Render)
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🚀 BEAST ENGINE ACTIVE ON PORT ${PORT}`);

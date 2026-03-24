@@ -2,17 +2,18 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>THE BIG MONEY | POLYMARKET BEAST</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>THE BIG MONEY | PREDICTOR</title>
     <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
     <style>
         :root { 
-            --bg: #080a0c; 
-            --card: #111418; 
-            --up: #00c087; 
-            --down: #ef454a; 
-            --gray: #848e9c; 
-            --yellow: #f3ba2f; 
-            --neon: #00bcd4; 
+            --bg: #050505; 
+            --card: #121212; 
+            --up: #00ffaa; 
+            --down: #ff3b3b; 
+            --gold: #d4af37;
+            --gold-gradient: linear-gradient(135deg, #f9f295 0%, #e0aa3e 25%, #b8860b 50%, #e0aa3e 75%, #f9f295 100%);
         }
 
         body { 
@@ -20,115 +21,217 @@
             color: white; 
             font-family: 'Inter', sans-serif; 
             margin: 0; 
-            padding: 10px; 
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
-            overflow: hidden; 
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
-        
-        .grid-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 15px; width: 1100px; height: 650px; }
-        .panel { background: var(--card); border: 1px solid #2b2f36; border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 0 50px rgba(0,0,0,0.5); padding: 20px; }
-        
-        /* Header Stats */
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #2b2f36; padding-bottom: 10px; }
-        .price-main { font-size: 2.2rem; font-weight: bold; font-family: monospace; color: var(--yellow); }
-        .target-box { font-size: 0.85rem; color: var(--gray); background: #1a1e23; padding: 5px 10px; border-radius: 4px; border: 1px dashed var(--yellow); }
 
-        /* Chart */
-        #chart { flex-grow: 1; min-height: 280px; position: relative; }
+        /* Luxury Logo Section */
+        .luxury-header {
+            text-align: center;
+            padding: 20px 0 10px 0;
+            background: linear-gradient(to bottom, #1a1a1a, var(--bg));
+        }
 
-        /* History Section Updated */
-        .history-section { margin-top: 15px; border-top: 1px solid #2b2f36; padding-top: 10px; height: 150px; overflow-y: auto; }
-        .history-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: center; }
-        .history-table th { color: var(--gray); padding-bottom: 8px; border-bottom: 1px solid #2b2f36; }
-        .history-table td { padding: 8px 0; border-bottom: 1px solid #1f2226; }
-        .status-badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; }
-        .status-success { background: rgba(0, 192, 135, 0.2); color: var(--up); }
-        .status-fail { background: rgba(239, 69, 74, 0.2); color: var(--down); }
+        .logo-text {
+            font-size: 2.2rem;
+            font-weight: 900;
+            background: var(--gold-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin: 0;
+            filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.4));
+        }
 
-        /* Momentum & SMC */
-        .momentum-bar { height: 10px; background: #1f2226; border-radius: 5px; overflow: hidden; margin: 12px 0; border: 1px solid #333; }
-        #momentum-fill { height: 100%; width: 50%; background: linear-gradient(90deg, var(--down), var(--up)); transition: 0.5s ease-in-out; }
-        .smart-money-tag { font-size: 0.65rem; padding: 2px 6px; border-radius: 3px; background: #333; margin-right: 5px; color: var(--yellow); }
-        
-        .timer-val { font-size: 3rem; color: var(--neon); font-family: monospace; font-weight: bold; text-align: center; text-shadow: 0 0 10px var(--neon); margin: 15px 0; }
-        
-        .final-btn { display: block; padding: 18px; border-radius: 4px; font-weight: 900; font-size: 1.3rem; border: none; text-transform: uppercase; cursor: pointer; text-align: center; text-decoration: none; transition: 0.3s; width: 100%; }
-        .neon-pulse { animation: pulse 1.5s infinite; box-shadow: 0 0 20px currentColor; }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
-        .poly-card { background: #1a1e23; padding: 15px; border-radius: 4px; border: 1px solid #333; margin-bottom: 10px; }
+        .premium-tag {
+            font-size: 0.7rem;
+            letter-spacing: 5px;
+            color: var(--gold);
+            text-transform: uppercase;
+            margin-top: -5px;
+            opacity: 0.8;
+        }
+
+        /* Main Container for Mobile */
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 15px;
+            flex-grow: 1;
+        }
+
+        .panel { 
+            background: var(--card); 
+            border: 1px solid #222; 
+            border-radius: 16px; 
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+        }
+
+        /* Price & Stats */
+        .price-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .price-main { 
+            font-size: 2.4rem; 
+            font-weight: 900; 
+            font-family: 'JetBrains Mono', monospace; 
+            color: white;
+        }
+
+        .diff-val {
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+
+        .target-label {
+            font-size: 0.8rem;
+            color: #888;
+            background: #1a1a1a;
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid var(--gold);
+        }
+
+        /* Chart - Adjusted for Mobile */
+        #chart { 
+            width: 100%;
+            height: 250px; 
+            margin-bottom: 15px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        /* Progress Bar */
+        .momentum-container {
+            margin: 20px 0;
+        }
+
+        .momentum-bar { 
+            height: 12px; 
+            background: #222; 
+            border-radius: 6px; 
+            overflow: hidden; 
+            position: relative;
+        }
+
+        #momentum-fill { 
+            height: 100%; 
+            width: 50%; 
+            background: var(--gold-gradient); 
+            transition: 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+        }
+
+        /* Action Section */
+        .timer-box {
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .timer-val { 
+            font-size: 3.5rem; 
+            color: var(--gold); 
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 900;
+        }
+
+        .final-btn { 
+            display: block; 
+            padding: 22px; 
+            border-radius: 12px; 
+            font-weight: 900; 
+            font-size: 1.4rem; 
+            border: none; 
+            text-transform: uppercase; 
+            cursor: pointer; 
+            text-align: center; 
+            text-decoration: none; 
+            transition: 0.3s; 
+            background: #222;
+            color: #555;
+        }
+
+        .neon-pulse { 
+            animation: pulse 1.5s infinite; 
+            box-shadow: 0 0 25px rgba(212, 175, 55, 0.4); 
+        }
+
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.03); } 100% { transform: scale(1); } }
+
+        /* Performance Table */
+        .history-section { margin-top: 10px; overflow-x: auto; }
+        .history-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .history-table td { padding: 12px 5px; border-bottom: 1px solid #222; text-align: center; }
+
+        /* Responsive Fixes */
+        @media (min-width: 768px) {
+            .container { flex-direction: row; max-width: 1200px; margin: 0 auto; }
+            .panel { flex: 1; }
+        }
     </style>
 </head>
 <body>
 
-<div class="grid-layout">
+<div class="luxury-header">
+    <h1 class="logo-text">The Big Money</h1>
+    <div class="premium-tag">Beast Engine v3</div>
+</div>
+
+<div class="container">
     <div class="panel">
-        <div class="header">
+        <div class="price-row">
             <div>
-                <span style="font-size:1.2rem; font-weight:bold;">BTC/USDT | 5M</span>
-                <div id="target-display" class="target-box mt-1">יעד פולימרקט: $0.00</div>
+                <div id="price" class="price-main">00,000</div>
+                <div id="price-diff" class="diff-val">$0.00 (0.00%)</div>
             </div>
-            <div style="text-align: left;">
-                <div id="price" class="price-main">--.---</div>
-                <div id="price-diff" style="font-weight: bold; font-family: monospace;">$0.00 (0.00%)</div>
-            </div>
+            <div id="target-display" class="target-label">TARGET: $0.00</div>
         </div>
         
         <div id="chart"></div>
 
+        <div class="momentum-container">
+            <div style="display:flex; justify-content:space-between; font-size:0.7rem; margin-bottom:5px; color:var(--gold);">
+                <span>BEARISH</span>
+                <span id="score-text">AI SCORE: 50</span>
+                <span>BULLISH</span>
+            </div>
+            <div class="momentum-bar"><div id="momentum-fill"></div></div>
+        </div>
+
         <div class="history-section">
-            <span style="color:var(--yellow); font-size:0.9rem; font-weight:bold;">מעקב ביצועים (Live Analytics)</span>
             <table class="history-table">
-                <thead>
-                    <tr>
-                        <th>זמן סגירה</th>
-                        <th>תחזית</th>
-                        <th>תוצאה</th>
-                        <th>סטטוס</th>
-                    </tr>
-                </thead>
-                <tbody id="history-body">
-                    </tbody>
+                <tbody id="history-body"></tbody>
             </table>
         </div>
     </div>
 
-    <div class="panel" style="justify-content: space-between;">
-        <div>
-            <div style="text-align:center; color:var(--yellow); font-weight:bold; margin-bottom:15px;">POLYMARKET REAL-TIME HUB</div>
-            
-            <div class="poly-card">
-                <span style="font-size: 0.7rem; color: var(--gray);">סיכויי הצלחה (אלגוריתמי)</span>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-                    <div style="text-align: center; background: #0c0f12; padding: 10px; border-radius: 4px;">
-                        <div style="font-size: 0.7rem; color: var(--gray);">YES</div>
-                        <div id="chance-up" style="font-size: 1.3rem; font-weight: bold; color: var(--up);">--%</div>
-                    </div>
-                    <div style="text-align: center; background: #0c0f12; padding: 10px; border-radius: 4px;">
-                        <div style="font-size: 0.7rem; color: var(--gray);">NO</div>
-                        <div id="chance-down" style="font-size: 1.3rem; font-weight: bold; color: var(--down);">--%</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="poly-card" style="border-left: 4px solid var(--neon);">
-                <span style="font-size: 0.7rem; color: var(--gray);">SMART MONEY ENGINE</span>
-                <div id="fvg-val" style="font-size:1.1rem; font-weight:bold; margin-top:5px;">מנתח...</div>
-                <div class="momentum-bar"><div id="momentum-fill"></div></div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem;">
-                    <div><span class="smart-money-tag">OB</span> <span id="ob-val" style="color:var(--gray)">--</span></div>
-                    <div><span class="smart-money-tag">LIQ</span> <span id="liq-val" style="color:var(--gray)">--</span></div>
-                </div>
-                <div id="rsi-val" style="font-size:0.75rem; color:var(--gray); margin-top:8px; border-top: 1px solid #333; padding-top: 5px;">RSI: --</div>
-            </div>
-        </div>
-
-        <div>
+    <div class="panel" style="max-width: 350px; align-self: center; width: 100%; box-sizing: border-box;">
+        <div class="timer-box">
+            <div style="font-size: 0.8rem; color: #888; letter-spacing: 2px;">NEXT ROUND IN</div>
             <div id="timer" class="timer-val">00:00</div>
-            <a id="main-btn" class="final-btn" style="background: #333; color: #888;" href="https://polymarket.com/event/btc-updown-5m" target="_blank">WAITING...</a>
         </div>
+
+        <div style="display: flex; justify-content: space-around; margin: 20px 0;">
+            <div style="text-align:center">
+                <div style="font-size:0.7rem; color:#888">YES CHANCE</div>
+                <div id="chance-up" style="color:var(--up); font-size:1.5rem; font-weight:bold;">--%</div>
+            </div>
+            <div style="text-align:center">
+                <div style="font-size:0.7rem; color:#888">NO CHANCE</div>
+                <div id="chance-down" style="color:var(--down); font-size:1.5rem; font-weight:bold;">--%</div>
+            </div>
+        </div>
+
+        <a id="main-btn" class="final-btn" href="https://polymarket.com/event/btc-updown-5m" target="_blank">ANALYZING...</a>
     </div>
 </div>
 
@@ -138,93 +241,68 @@
     const chartContainer = document.getElementById('chart');
     
     const chart = LightweightCharts.createChart(chartContainer, {
-        layout: { backgroundColor: '#111418', textColor: '#d1d4dc' },
-        grid: { vertLines: { color: '#1f2226' }, horzLines: { color: '#1f2226' } },
-        timeScale: { timeVisible: true, secondsVisible: false }
+        layout: { backgroundColor: 'transparent', textColor: '#888', fontSize: 10 },
+        grid: { vertLines: { visible: false }, horzLines: { color: '#222' } },
+        timeScale: { borderVisible: false },
+        rightPriceScale: { borderVisible: false }
     });
 
     const candleSeries = chart.addCandlestickSeries({ 
-        upColor: '#00c087', downColor: '#ef454a', borderVisible: false, wickUpColor: '#00c087', wickDownColor: '#ef454a' 
+        upColor: '#00ffaa', downColor: '#ff3b3b', borderVisible: false, wickUpColor: '#00ffaa', wickDownColor: '#ff3b3b' 
     });
 
     const priceLine = candleSeries.createPriceLine({
-        price: 0, color: '#f3ba2f', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'TARGET',
+        price: 0, color: '#d4af37', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'TARGET',
     });
 
     socket.on('marketUpdate', (data) => {
-        // 1. עדכון מחיר ומרחק
         const price = data.price;
         const target = data.lastClose;
         const diff = (price - target).toFixed(2);
         const diffPct = ((diff / target) * 100).toFixed(3);
         
         document.getElementById('price').innerText = price.toLocaleString();
-        document.getElementById('target-display').innerText = `יעד פולימרקט: $${target.toLocaleString()}`;
+        document.getElementById('target-display').innerText = `TARGET: $${target.toLocaleString()}`;
         
         const diffEl = document.getElementById('price-diff');
         diffEl.innerText = `${diff >= 0 ? '+' : ''}${diff}$ (${diffPct}%)`;
         diffEl.style.color = diff >= 0 ? 'var(--up)' : 'var(--down)';
 
-        // 2. עדכון קו יעד על הגרף
         priceLine.applyOptions({ price: target });
 
-        // 3. עדכון נר יפני
         candleSeries.update({
             time: Math.floor(Date.now() / 1000),
-            open: data.candle.o,
-            high: data.candle.h,
-            low: data.candle.l,
-            close: data.price
+            open: data.candle.o, high: data.candle.h, low: data.candle.l, close: data.price
         });
 
-        // 4. עדכון אחוזי הצלחה ומומנטום
-        const yesChance = data.finalScore;
-        document.getElementById('chance-up').innerText = yesChance + '%';
-        document.getElementById('chance-down').innerText = (100 - yesChance) + '%';
-        
-        const mFill = document.getElementById('momentum-fill');
-        mFill.style.width = yesChance + '%';
-        mFill.style.background = yesChance > 50 ? 'var(--up)' : 'var(--down)';
+        const score = data.finalScore;
+        document.getElementById('score-text').innerText = `AI SCORE: ${score}`;
+        document.getElementById('chance-up').innerText = score + '%';
+        document.getElementById('chance-down').innerText = (100 - score) + '%';
+        document.getElementById('momentum-fill').style.width = score + '%';
 
-        // 5. עדכון נתונים מורחב
-        document.getElementById('fvg-val').innerText = `FVG: ${data.fvg}`;
-        document.getElementById('ob-val').innerText = data.trend;
-        document.getElementById('liq-val').innerText = data.liquiditySweep ? '⚠️ SWEEP' : 'Safe';
-        
-        if(data.rsi) {
-            document.getElementById('rsi-val').innerText = `RSI: ${parseFloat(data.rsi).toFixed(2)} | DIV: ${data.divergence || 'None'}`;
-        }
-
-        // 6. טיימר
         const mins = Math.floor(data.secondsLeft / 60);
         const secs = data.secondsLeft % 60;
         document.getElementById('timer').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
-        // 7. כפתור הפעולה (Strong Buy/Sell)
         const btn = document.getElementById('main-btn');
-        if (yesChance >= 85) {
-            btn.innerHTML = `🔥 STRONG BUY YES (${yesChance}%)`;
-            btn.className = 'final-btn neon-pulse'; btn.style.background = 'var(--up)'; btn.style.color = 'white';
-        } else if (yesChance <= 15) {
-            btn.innerHTML = `🚨 STRONG SELL NO (${yesChance}%)`;
+        if (score >= 80) {
+            btn.innerHTML = `BUY YES (${score}%)`;
+            btn.className = 'final-btn neon-pulse'; btn.style.background = 'var(--up)'; btn.style.color = 'black';
+        } else if (score <= 20) {
+            btn.innerHTML = `BUY NO (${100-score}%)`;
             btn.className = 'final-btn neon-pulse'; btn.style.background = 'var(--down)'; btn.style.color = 'white';
         } else {
-            btn.innerHTML = 'ANALYZING MARKET...';
-            btn.className = 'final-btn'; btn.style.background = '#333'; btn.style.color = '#888';
+            btn.innerHTML = 'HOLD / NEUTRAL';
+            btn.className = 'final-btn'; btn.style.background = '#222'; btn.style.color = '#555';
         }
 
-        // 8. עדכון היסטוריית ביצועים דינמית
         if (data.history) {
-            document.getElementById('history-body').innerHTML = data.history.map(h => `
+            document.getElementById('history-body').innerHTML = data.history.slice(0, 5).map(h => `
                 <tr>
-                    <td>${h.time}</td>
-                    <td style="color:${h.prediction === 'YES' ? 'var(--up)' : 'var(--down)'}">${h.prediction}</td>
-                    <td style="font-weight: bold;">${h.result}</td>
-                    <td>
-                        <span class="status-badge ${h.success ? 'status-success' : 'status-fail'}">
-                            ${h.success ? '🎯 הצלחה' : '❌ פספוס'}
-                        </span>
-                    </td>
+                    <td style="color:#666">${h.time}</td>
+                    <td style="color:${h.prediction === 'YES' ? 'var(--up)' : 'var(--down)'}; font-weight:bold">${h.prediction}</td>
+                    <td style="color:${h.success ? 'var(--up)' : 'var(--down)'}">${h.success ? '🎯 WIN' : '❌ LOSS'}</td>
                 </tr>
             `).join('');
         }
