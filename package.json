@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "express": "^5.2.1",
+    "luxon": "^3.7.2",
+    "socket.io": "^4.8.3",
+    "technicalindicators": "^3.1.0",
+    "ws": "^8.20.0"
+  }
+}
