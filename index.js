@@ -3,7 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const WebSocket = require('ws');
 const axios = require('axios');
-const { RSI, VWAP, BollingerBands } = require('technicalindicators');
+const { RSI, VWAP } = require('technicalindicators');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,28 +12,29 @@ const io = new Server(server);
 app.use(express.static('public'));
 
 let lastClosePrice = 0;
-let currentLiveIndex = 0; // מחיר מדד חי ומסונכרן
+let currentLiveIndex = 0;
+let dailyStats = { wins: 0, losses: 0, total: 0, rate: 0 }; // מעקב יומי
 let prices = [];
 let prices1m = []; 
 let candles = [];
 let history = []; 
 let lockedDecision = null; 
 
-// --- מנגנון סנכרון רציף למחיר פולימרקט (Coinbase XBX) ---
+// --- סנכרון ברזל מול Pyth Network (הכי מדויק לפולימרקט) ---
 async function syncPolymarketPrice() {
     try {
-        const response = await axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot');
-        currentLiveIndex = parseFloat(response.data.data.amount);
+        const pythPriceId = "0xe62df6c8b4a8599688d2590a39ec7847776324831ff3f73f35558f07aa9ca2bc";
+        const response = await axios.get(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${pythPriceId}`);
+        const p = response.data.parsed[0].price;
+        currentLiveIndex = parseFloat(p.price) * Math.pow(10, p.expo);
     } catch (e) {
-        // גיבוי ל-Pyth אם Coinbase נכשל
+        // גיבוי ל-Coinbase
         try {
-            const pythPriceId = "0xe62df6c8b4a8599688d2590a39ec7847776324831ff3f73f35558f07aa9ca2bc";
-            const pythRes = await axios.get(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${pythPriceId}`);
-            const p = pythRes.data.parsed[0].price;
-            currentLiveIndex = parseFloat(p.price) * Math.pow(10, p.expo);
+            const cb = await axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot');
+            currentLiveIndex = parseFloat(cb.data.data.amount);
         } catch (err) {}
     }
-    setTimeout(syncPolymarketPrice, 2000); // עדכון כל 2 שניות לדיוק מקסימלי
+    setTimeout(syncPolymarketPrice, 1000); // עדכון כל שנייה לדיוק מקסימלי
 }
 syncPolymarketPrice();
 
@@ -49,7 +50,7 @@ const binanceWS = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_
 binanceWS.on('message', async (data) => {
     const msg = JSON.parse(data);
     const k = msg.k;
-    const price = currentLiveIndex || parseFloat(k.c); // שימוש במדד המסונכרן כמחיר ראשי
+    const price = currentLiveIndex || parseFloat(k.c); 
     const isFinal = k.x;
 
     const now = Date.now();
@@ -57,7 +58,6 @@ binanceWS.on('message', async (data) => {
     const nextBoundary = Math.ceil(now / msIn5Min) * msIn5Min;
     const secondsLeft = Math.floor((nextBoundary - now) / 1000);
 
-    // נעילת מחיר יעד בתחילת סבב
     if (!lastClosePrice || secondsLeft >= 299) {
         lastClosePrice = currentLiveIndex || parseFloat(k.o);
         lockedDecision = null; 
@@ -68,14 +68,14 @@ binanceWS.on('message', async (data) => {
 
     const rsiVal = calculateRSI(prices);
     const rsi1mVal = calculateRSI(prices1m);
-    const vwapVal = calculateVWAP(k);
+    const vwapVal = (parseFloat(k.h) + parseFloat(k.l) + parseFloat(k.c)) / 3;
     const fvg = detectFVG(k);
     
     const low = parseFloat(k.l);
     const high = parseFloat(k.h);
     const isLiquiditySweep = (price > low * 1.0001 && low < (candles.length > 0 ? candles[candles.length-1].l : low));
 
-    // ניתוח SMC מורחב
+    // חישוב ציון SMC שזז כל הזמן לפי המרחק מהיעד
     const analysisResult = calculateSMCScore({
         lastClose: lastClosePrice, 
         secondsLeft: secondsLeft, 
@@ -84,13 +84,12 @@ binanceWS.on('message', async (data) => {
         rsi1m: rsi1mVal,
         trend: price > vwapVal ? 'BULLISH' : 'BEARISH',
         sweep: isLiquiditySweep
-    }, price, vwapVal);
+    }, price);
 
-    // נעילת החלטה ב-2.5 דקות
     if (secondsLeft <= 150 && !lockedDecision) {
         lockedDecision = {
             score: analysisResult.score,
-            action: analysisResult.score >= 70 ? 'STRONG YES' : analysisResult.score <= 30 ? 'STRONG NO' : 'NEUTRAL',
+            action: analysisResult.score >= 50 ? 'YES' : 'NO', // סימון VIP ברור
             time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             reason: analysisResult.signal
         };
@@ -109,6 +108,7 @@ binanceWS.on('message', async (data) => {
         history: history,
         lockedDecision: lockedDecision, 
         smcSignal: analysisResult.signal,
+        stats: dailyStats, // שליחת סיכום יומי
         analysis: { 
             volatility: (high - low).toFixed(2),
             volume: parseFloat(k.v).toFixed(2),
@@ -116,18 +116,24 @@ binanceWS.on('message', async (data) => {
         }
     };
 
-    marketData.finalScore = lockedDecision ? lockedDecision.score : analysisResult.score;
+    marketData.finalScore = analysisResult.score;
     io.emit('marketUpdate', marketData);
 
     if (isFinal) {
         const win = (price > lastClosePrice); 
         const predictionWasYes = (marketData.finalScore > 50); 
-        
+        const isSuccess = (predictionWasYes === win);
+
+        // עדכון סיכום יומי
+        dailyStats.total++;
+        if (isSuccess) dailyStats.wins++; else dailyStats.losses++;
+        dailyStats.rate = ((dailyStats.wins / dailyStats.total) * 100).toFixed(1);
+
         history.unshift({
             time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
             prediction: predictionWasYes ? 'YES' : 'NO',
             result: win ? 'YES' : 'NO',
-            success: (predictionWasYes === win)
+            success: isSuccess
         });
 
         if (history.length > 10) history.pop(); 
@@ -139,41 +145,27 @@ binanceWS.on('message', async (data) => {
     }
 });
 
-function calculateSMCScore(data, price, vwap) {
+function calculateSMCScore(data, price) {
     let score = 50;
     let signalParts = [];
     const diff = price - data.lastClose;
 
-    // ניתוח FVG ופריצה מקדימה
+    // האחוזים זזים בלייב לפי המרחק מהמחיר (כל דולר משנה)
+    score += (diff * 1.5); 
+
     if (data.fvg !== 'NONE') {
-        score += (data.fvg === 'BULLISH' ? 20 : -20);
-        signalParts.push(`PRE-ANALYSIS: ${data.fvg} GAP`);
+        score += (data.fvg === 'BULLISH' ? 15 : -15);
+        signalParts.push(`GAP ${data.fvg}`);
     }
 
-    if (data.rsi > 58 && data.rsi1m > 58) {
-        score += 15;
-        signalParts.push("DUAL MOMENTUM 🟢");
-    } else if (data.rsi < 42 && data.rsi1m < 42) {
-        score -= 15;
-        signalParts.push("DUAL MOMENTUM 🔴");
-    }
+    if (data.rsi > 55 && data.rsi1m > 55) { score += 10; signalParts.push("MOMENTUM 🟢"); }
+    if (data.rsi < 45 && data.rsi1m < 45) { score -= 10; signalParts.push("MOMENTUM 🔴"); }
 
-    if (data.sweep) {
-        score += 12;
-        signalParts.push("LIQ SWEEP ✅");
-    }
-
-    if (data.trend === 'BULLISH') score += 8; else score -= 8;
-
-    // לחץ מחיר בסוף סבב
-    if (data.secondsLeft < 100) {
-        if (diff > 10) score += 10;
-        if (diff < -10) score -= 10;
-    }
+    if (data.sweep) { score += 10; signalParts.push("SWEEP ✅"); }
 
     return {
         score: Math.min(99, Math.max(1, Math.round(score))),
-        signal: signalParts.length > 0 ? signalParts.join(" | ") : "SCANNING SMC STRUCTURE..."
+        signal: signalParts.length > 0 ? signalParts.join(" | ") : "SCANNING SMC..."
     };
 }
 
@@ -181,14 +173,6 @@ function calculateRSI(values) {
     if (values.length < 14) return 50;
     const result = RSI.calculate({ values: values.slice(-15), period: 14 });
     return result[result.length - 1] || 50;
-}
-
-function calculateVWAP(k) {
-    const vwap = VWAP.calculate({
-        high: [parseFloat(k.h)], low: [parseFloat(k.l)],
-        close: [parseFloat(k.c)], volume: [parseFloat(k.v)]
-    });
-    return vwap[0] || parseFloat(k.c);
 }
 
 function detectFVG(k) {
