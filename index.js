@@ -2,23 +2,35 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const WebSocket = require('ws');
+const axios = require('axios');
 const { RSI, VWAP, BollingerBands } = require('technicalindicators');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// וודא שקובץ ה-index.html שלך נמצא בתיקיית public
 app.use(express.static('public'));
 
 let lastClosePrice = 0;
 let prices = [];
 let candles = [];
 let history = []; 
+let lockedDecision = null; // משתנה חדש לנעילת ההחלטה ב-2.5 דקות
+
+async function getPythPrice() {
+    try {
+        const pythPriceId = "0xe62df6c8b4a8599688d2590a39ec7847776324831ff3f73f35558f07aa9ca2bc";
+        const response = await axios.get(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${pythPriceId}`);
+        const priceData = response.data.parsed[0].price;
+        return parseFloat(priceData.price) * Math.pow(10, priceData.expo);
+    } catch (error) {
+        return null;
+    }
+}
 
 const binanceWS = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_5m');
 
-binanceWS.on('message', (data) => {
+binanceWS.on('message', async (data) => {
     const msg = JSON.parse(data);
     const k = msg.k;
     const price = parseFloat(k.c);
@@ -29,9 +41,11 @@ binanceWS.on('message', (data) => {
     const nextBoundary = Math.ceil(now / msIn5Min) * msIn5Min;
     const secondsLeft = Math.floor((nextBoundary - now) / 1000);
 
-    // --- עדכון קריטי: איפוס מחיר יעד בכל תחילת סבב ---
+    const indexPrice = await getPythPrice();
+
     if (!lastClosePrice || secondsLeft >= 299) {
-        lastClosePrice = parseFloat(k.o);
+        lastClosePrice = indexPrice || parseFloat(k.o);
+        lockedDecision = null; // איפוס הנעילה בסבב חדש
     }
 
     prices.push(price);
@@ -43,8 +57,23 @@ binanceWS.on('message', (data) => {
     const divergence = checkRSIDivergence(price, rsiVal);
     const fvg = detectFVG(k);
 
+    const currentPriceForScore = indexPrice || price;
+
+    // --- לוגיקת נעילת החלטה ב-2.5 דקות (150 שניות לסיום) ---
+    if (secondsLeft <= 150 && !lockedDecision) {
+        const scoreAtLock = calculateFinalScore({lastClose: lastClosePrice, secondsLeft: secondsLeft, fvg: fvg, rsi: rsiVal, trend: price > vwapVal ? 'BULLISH' : 'BEARISH'}, currentPriceForScore, vwapVal, bb);
+        
+        lockedDecision = {
+            score: scoreAtLock,
+            action: scoreAtLock >= 75 ? 'STRONG YES' : scoreAtLock <= 25 ? 'STRONG NO' : 'NEUTRAL',
+            time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            reason: `RSI: ${rsiVal.toFixed(1)} | FVG: ${fvg} | DIST: ${(currentPriceForScore - lastClosePrice).toFixed(2)}`
+        };
+    }
+
     const marketData = {
         price: price,
+        indexPrice: indexPrice,
         lastClose: lastClosePrice,
         secondsLeft: secondsLeft,
         rsi: rsiVal,
@@ -53,14 +82,21 @@ binanceWS.on('message', (data) => {
         divergence: divergence,
         liquiditySweep: price < parseFloat(k.l) * 1.0002,
         candle: { o: k.o, h: k.h, l: k.l, c: k.c },
-        history: history 
+        history: history,
+        lockedDecision: lockedDecision, // שליחת ההחלטה הנעולה לאתר
+        analysis: { // נתונים לטרמינל הלייב
+            volatility: (parseFloat(k.h) - parseFloat(k.l)).toFixed(2),
+            volume: parseFloat(k.v).toFixed(2),
+            buyPressure: (price > (parseFloat(k.h) + parseFloat(k.l)) / 2) ? 'HIGH' : 'LOW'
+        }
     };
 
-    marketData.finalScore = calculateFinalScore(marketData, price, vwapVal, bb);
+    marketData.finalScore = lockedDecision ? lockedDecision.score : calculateFinalScore(marketData, currentPriceForScore, vwapVal, bb);
     io.emit('marketUpdate', marketData);
 
     if (isFinal) {
-        const win = (price > lastClosePrice); 
+        const finalPrice = indexPrice || price;
+        const win = (finalPrice > lastClosePrice); 
         const predictionWasYes = (marketData.finalScore > 50); 
         
         history.unshift({
@@ -72,8 +108,8 @@ binanceWS.on('message', (data) => {
 
         if (history.length > 10) history.pop(); 
 
-        // עדכון מחיר יעד לסבב הבא ברגע שהנר נסגר
-        lastClosePrice = price; 
+        lastClosePrice = finalPrice; 
+        lockedDecision = null; // איפוס סופי לסבב הבא
 
         candles.push({ h: parseFloat(k.h), l: parseFloat(k.l), c: price });
         if (candles.length > 20) candles.shift();

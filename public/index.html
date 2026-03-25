@@ -28,7 +28,6 @@
             overflow-x: hidden;
         }
 
-        /* Luxury Logo Section */
         .luxury-header {
             text-align: center;
             padding: 20px 0 10px 0;
@@ -56,7 +55,6 @@
             opacity: 0.8;
         }
 
-        /* Main Container for Mobile */
         .container {
             display: flex;
             flex-direction: column;
@@ -73,7 +71,6 @@
             box-shadow: 0 4px 20px rgba(0,0,0,0.8);
         }
 
-        /* Price & Stats */
         .price-row {
             display: flex;
             justify-content: space-between;
@@ -102,7 +99,6 @@
             border: 1px solid var(--gold);
         }
 
-        /* Chart - Adjusted for Mobile */
         #chart { 
             width: 100%;
             height: 250px; 
@@ -111,7 +107,6 @@
             overflow: hidden;
         }
 
-        /* Progress Bar */
         .momentum-container {
             margin: 20px 0;
         }
@@ -131,7 +126,6 @@
             transition: 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
         }
 
-        /* Action Section */
         .timer-box {
             text-align: center;
             margin: 10px 0;
@@ -167,12 +161,23 @@
 
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.03); } 100% { transform: scale(1); } }
 
-        /* Performance Table */
         .history-section { margin-top: 10px; overflow-x: auto; }
         .history-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
         .history-table td { padding: 12px 5px; border-bottom: 1px solid #222; text-align: center; }
 
-        /* Responsive Fixes */
+        /* Terminal Style */
+        .terminal-box {
+            background: #080808;
+            border: 1px dashed var(--gold);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 15px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            color: #00ffaa;
+            line-height: 1.4;
+        }
+
         @media (min-width: 768px) {
             .container { flex-direction: row; max-width: 1200px; margin: 0 auto; }
             .panel { flex: 1; }
@@ -205,6 +210,11 @@
                 <span>BULLISH</span>
             </div>
             <div class="momentum-bar"><div id="momentum-fill"></div></div>
+        </div>
+
+        <div class="terminal-box" id="live-terminal">
+            > INITIALIZING ENGINE...<br>
+            > WAITING FOR DATA STREAM...
         </div>
 
         <div class="history-section">
@@ -256,13 +266,13 @@
     });
 
     socket.on('marketUpdate', (data) => {
-        const price = data.price;
+        const price = data.indexPrice || data.price;
         const target = data.lastClose;
         const diff = (price - target).toFixed(2);
         const diffPct = ((diff / target) * 100).toFixed(3);
         
-        document.getElementById('price').innerText = price.toLocaleString();
-        document.getElementById('target-display').innerText = `TARGET: $${target.toLocaleString()}`;
+        document.getElementById('price').innerText = price.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('target-display').innerText = `TARGET: $${target.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         
         const diffEl = document.getElementById('price-diff');
         diffEl.innerText = `${diff >= 0 ? '+' : ''}${diff}$ (${diffPct}%)`;
@@ -275,6 +285,14 @@
             open: data.candle.o, high: data.candle.h, low: data.candle.l, close: data.price
         });
 
+        // עדכון טרמינל חי
+        const terminal = document.getElementById('live-terminal');
+        terminal.innerHTML = `
+            > INDEX: $${price.toFixed(2)} | VOL: ${data.analysis.volume}<br>
+            > RSI: ${data.rsi.toFixed(1)} | FVG: ${data.fvg} | TREND: ${data.trend}<br>
+            ${data.lockedDecision ? `> <span style="color:var(--gold)">DECISION LOCKED [${data.lockedDecision.time}]</span>` : '> ANALYZING MARKET STRUCTURE...'}
+        `;
+
         const score = data.finalScore;
         document.getElementById('score-text').innerText = `AI SCORE: ${score}`;
         document.getElementById('chance-up').innerText = score + '%';
@@ -286,15 +304,18 @@
         document.getElementById('timer').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
         const btn = document.getElementById('main-btn');
-        if (score >= 80) {
-            btn.innerHTML = `BUY YES (${score}%)`;
-            btn.className = 'final-btn neon-pulse'; btn.style.background = 'var(--up)'; btn.style.color = 'black';
-        } else if (score <= 20) {
-            btn.innerHTML = `BUY NO (${100-score}%)`;
-            btn.className = 'final-btn neon-pulse'; btn.style.background = 'var(--down)'; btn.style.color = 'white';
+        // אם יש החלטה נעולה, הכפתור מציג אותה
+        if (data.lockedDecision) {
+            const d = data.lockedDecision;
+            btn.innerHTML = `${d.action} (${d.score}%)`;
+            btn.style.background = d.score >= 50 ? 'var(--up)' : 'var(--down)';
+            btn.style.color = d.score >= 50 ? 'black' : 'white';
+            btn.className = 'final-btn neon-pulse';
         } else {
-            btn.innerHTML = 'HOLD / NEUTRAL';
-            btn.className = 'final-btn'; btn.style.background = '#222'; btn.style.color = '#555';
+            btn.innerHTML = `WAITING FOR LOCK (${data.secondsLeft}s)`;
+            btn.style.background = '#222';
+            btn.style.color = '#555';
+            btn.className = 'final-btn';
         }
 
         if (data.history) {
