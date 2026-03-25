@@ -212,8 +212,8 @@
         </div>
 
         <div class="terminal-box" id="live-terminal">
-            > INITIALIZING MULTI-TIMEFRAME ENGINE...<br>
-            > SCANNING 1M & 5M DATA STREAMS...
+            > INITIALIZING SMC ENGINE...<br>
+            > SYNCING COINBASE XBX INDEX...
         </div>
 
         <div class="history-section">
@@ -284,22 +284,25 @@
             open: data.candle.o, high: data.candle.h, low: data.candle.l, close: data.price
         });
 
-        // עדכון טרמינל משופר (Multi-Timeframe) עם שורת ה-SIGNAL
+        // עדכון טרמינל מורחב עם SMC SIGNAL ו-TARGET GAP
         const terminal = document.getElementById('live-terminal');
         const rsi1m = data.rsi1m ? data.rsi1m.toFixed(1) : "SCANNING";
         const trendIcon = data.trend === 'BULLISH' ? '▲' : '▼';
+        const gap = (price - target).toFixed(2);
         
         terminal.innerHTML = `
-            > INDEX: $${price.toFixed(2)} | VOL: ${data.analysis.volume}<br>
-            > SMC SIGNAL: <span style="color:var(--gold)">${data.smcSignal || "ANALYZING..."}</span><br>
+            > INDEX: $${price.toFixed(2)} | GAP: <span style="color:${gap >= 0 ? 'var(--up)' : 'var(--down)'}">${gap >= 0 ? '+' : ''}${gap}$</span><br>
+            > SMC SIGNAL: <span style="color:var(--gold)">${data.smcSignal || "ANALYZING STRUCTURE..."}</span><br>
             > 5M RSI: ${data.rsi.toFixed(1)} | 1M RSI: ${rsi1m}<br>
             > TREND: ${data.trend} ${trendIcon} | PWR: ${data.analysis.buyPressure}<br>
             > VOLATILITY: ${data.analysis.volatility} | FVG: ${data.fvg}<br>
-            ${data.lockedDecision ? `> <span style="color:var(--gold)">DECISION LOCKED [${data.lockedDecision.time}]</span>` : '> SCANNING FOR MARKET WHALES...'}
+            ${data.lockedDecision ? `> <span style="color:var(--gold)">DECISION LOCKED [${data.lockedDecision.time}]</span>` : '> SCANNING FOR INSTITUTIONAL FLOW...'}
         `;
 
         const score = data.finalScore;
         document.getElementById('score-text').innerText = `AI SCORE: ${score}`;
+        
+        // חישוב אחוזי ה-YES/NO Chance לפי ה-Score של המנוע
         document.getElementById('chance-up').innerText = score + '%';
         document.getElementById('chance-down').innerText = (100 - score) + '%';
         document.getElementById('momentum-fill').style.width = score + '%';
