@@ -13,28 +13,29 @@ app.use(express.static('public'));
 
 let lastClosePrice = 0;
 let currentLiveIndex = 0;
-let dailyStats = { wins: 0, losses: 0, total: 0, rate: 0 }; // מעקב יומי
+let dailyStats = { wins: 0, losses: 0, total: 0, rate: 0 };
 let prices = [];
 let prices1m = []; 
 let candles = [];
 let history = []; 
 let lockedDecision = null; 
 
-// --- סנכרון ברזל מול Pyth Network (הכי מדויק לפולימרקט) ---
+// --- סנכרון מחיר "על הסנט" (Coinbase XBX Index) ---
 async function syncPolymarketPrice() {
     try {
-        const pythPriceId = "0xe62df6c8b4a8599688d2590a39ec7847776324831ff3f73f35558f07aa9ca2bc";
-        const response = await axios.get(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${pythPriceId}`);
-        const p = response.data.parsed[0].price;
-        currentLiveIndex = parseFloat(p.price) * Math.pow(10, p.expo);
+        // פולימרקט משתמשים במדד ה-XBX של Coinbase
+        const response = await axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot');
+        currentLiveIndex = parseFloat(response.data.data.amount);
     } catch (e) {
-        // גיבוי ל-Coinbase
+        // גיבוי ל-Pyth אם Coinbase לא זמין
         try {
-            const cb = await axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot');
-            currentLiveIndex = parseFloat(cb.data.data.amount);
+            const pythPriceId = "0xe62df6c8b4a8599688d2590a39ec7847776324831ff3f73f35558f07aa9ca2bc";
+            const pythRes = await axios.get(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${pythPriceId}`);
+            const p = pythRes.data.parsed[0].price;
+            currentLiveIndex = parseFloat(p.price) * Math.pow(10, p.expo);
         } catch (err) {}
     }
-    setTimeout(syncPolymarketPrice, 1000); // עדכון כל שנייה לדיוק מקסימלי
+    setTimeout(syncPolymarketPrice, 1000); 
 }
 syncPolymarketPrice();
 
@@ -75,7 +76,6 @@ binanceWS.on('message', async (data) => {
     const high = parseFloat(k.h);
     const isLiquiditySweep = (price > low * 1.0001 && low < (candles.length > 0 ? candles[candles.length-1].l : low));
 
-    // חישוב ציון SMC שזז כל הזמן לפי המרחק מהיעד
     const analysisResult = calculateSMCScore({
         lastClose: lastClosePrice, 
         secondsLeft: secondsLeft, 
@@ -89,9 +89,13 @@ binanceWS.on('message', async (data) => {
     if (secondsLeft <= 150 && !lockedDecision) {
         lockedDecision = {
             score: analysisResult.score,
-            action: analysisResult.score >= 50 ? 'YES' : 'NO', // סימון VIP ברור
+            action: analysisResult.score >= 50 ? 'YES' : 'NO',
             time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            reason: analysisResult.signal
+            reason: analysisResult.signal,
+            // שמירת מצב הניתוח ברגע הנעילה לבדיקה עתידית
+            fvgAtLock: fvg,
+            rsiAtLock: rsiVal,
+            trendAtLock: price > vwapVal ? 'BULLISH' : 'BEARISH'
         };
     }
 
@@ -108,7 +112,7 @@ binanceWS.on('message', async (data) => {
         history: history,
         lockedDecision: lockedDecision, 
         smcSignal: analysisResult.signal,
-        stats: dailyStats, // שליחת סיכום יומי
+        stats: dailyStats,
         analysis: { 
             volatility: (high - low).toFixed(2),
             volume: parseFloat(k.v).toFixed(2),
@@ -120,24 +124,33 @@ binanceWS.on('message', async (data) => {
     io.emit('marketUpdate', marketData);
 
     if (isFinal) {
-        const win = (price > lastClosePrice); 
+        const finalPrice = currentLiveIndex || price;
+        const actualWin = (finalPrice > lastClosePrice); 
         const predictionWasYes = (marketData.finalScore > 50); 
-        const isSuccess = (predictionWasYes === win);
+        const isSuccess = (predictionWasYes === actualWin);
 
-        // עדכון סיכום יומי
         dailyStats.total++;
         if (isSuccess) dailyStats.wins++; else dailyStats.losses++;
         dailyStats.rate = ((dailyStats.wins / dailyStats.total) * 100).toFixed(1);
 
+        // פירוט אילו ניתוחים צדקו
+        const details = {
+            fvg: (fvg === 'BULLISH' && actualWin) || (fvg === 'BEARISH' && !actualWin) || (fvg === 'NONE'),
+            rsi: (rsiVal > 50 && actualWin) || (rsiVal < 50 && !actualWin),
+            trend: (marketData.trend === 'BULLISH' && actualWin) || (marketData.trend === 'BEARISH' && !actualWin)
+        };
+
         history.unshift({
             time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
             prediction: predictionWasYes ? 'YES' : 'NO',
-            result: win ? 'YES' : 'NO',
-            success: isSuccess
+            result: actualWin ? 'YES' : 'NO',
+            closePrice: finalPrice.toFixed(2), // מחיר הסגירה
+            success: isSuccess,
+            analysisDetails: details
         });
 
         if (history.length > 10) history.pop(); 
-        lastClosePrice = price; 
+        lastClosePrice = finalPrice; 
         lockedDecision = null; 
 
         candles.push({ h: high, l: low, c: price });
@@ -150,7 +163,6 @@ function calculateSMCScore(data, price) {
     let signalParts = [];
     const diff = price - data.lastClose;
 
-    // האחוזים זזים בלייב לפי המרחק מהמחיר (כל דולר משנה)
     score += (diff * 1.5); 
 
     if (data.fvg !== 'NONE') {
@@ -160,7 +172,6 @@ function calculateSMCScore(data, price) {
 
     if (data.rsi > 55 && data.rsi1m > 55) { score += 10; signalParts.push("MOMENTUM 🟢"); }
     if (data.rsi < 45 && data.rsi1m < 45) { score -= 10; signalParts.push("MOMENTUM 🔴"); }
-
     if (data.sweep) { score += 10; signalParts.push("SWEEP ✅"); }
 
     return {

@@ -284,25 +284,26 @@
             open: data.candle.o, high: data.candle.h, low: data.candle.l, close: data.price
         });
 
-        // עדכון טרמינל מורחב עם SMC SIGNAL ו-TARGET GAP
+        // עדכון טרמינל מורחב עם DAILY SUMMARY ו-SMC SIGNAL
         const terminal = document.getElementById('live-terminal');
         const rsi1m = data.rsi1m ? data.rsi1m.toFixed(1) : "SCANNING";
         const trendIcon = data.trend === 'BULLISH' ? '▲' : '▼';
         const gap = (price - target).toFixed(2);
+        const stats = data.stats || { wins: 0, losses: 0, rate: 0 };
         
         terminal.innerHTML = `
+            <div style="color:var(--gold); font-weight:bold; border-bottom:1px solid #333; margin-bottom:5px;">
+                📊 DAILY SUMMARY: ${stats.wins}W - ${stats.losses}L | SUCCESS: ${stats.rate}%
+            </div>
             > INDEX: $${price.toFixed(2)} | GAP: <span style="color:${gap >= 0 ? 'var(--up)' : 'var(--down)'}">${gap >= 0 ? '+' : ''}${gap}$</span><br>
             > SMC SIGNAL: <span style="color:var(--gold)">${data.smcSignal || "ANALYZING STRUCTURE..."}</span><br>
             > 5M RSI: ${data.rsi.toFixed(1)} | 1M RSI: ${rsi1m}<br>
             > TREND: ${data.trend} ${trendIcon} | PWR: ${data.analysis.buyPressure}<br>
-            > VOLATILITY: ${data.analysis.volatility} | FVG: ${data.fvg}<br>
             ${data.lockedDecision ? `> <span style="color:var(--gold)">DECISION LOCKED [${data.lockedDecision.time}]</span>` : '> SCANNING FOR INSTITUTIONAL FLOW...'}
         `;
 
         const score = data.finalScore;
         document.getElementById('score-text').innerText = `AI SCORE: ${score}`;
-        
-        // חישוב אחוזי ה-YES/NO Chance לפי ה-Score של המנוע
         document.getElementById('chance-up').innerText = score + '%';
         document.getElementById('chance-down').innerText = (100 - score) + '%';
         document.getElementById('momentum-fill').style.width = score + '%';
@@ -331,10 +332,16 @@
 
         if (data.history) {
             document.getElementById('history-body').innerHTML = data.history.slice(0, 5).map(h => `
-                <tr>
+                <tr style="border-bottom: 1px solid #222;">
                     <td style="color:#666">${h.time}</td>
-                    <td style="color:${h.prediction === 'YES' ? 'var(--up)' : 'var(--down)'}; font-weight:bold">${h.prediction}</td>
-                    <td style="color:${h.success ? 'var(--up)' : 'var(--down)'}">${h.success ? '🎯 WIN' : '❌ LOSS'}</td>
+                    <td style="font-weight:bold; color:${h.success ? 'var(--up)' : 'var(--down)'}">${h.prediction}</td>
+                    <td style="color:var(--gold)">$${h.closePrice || "---"}</td>
+                    <td>
+                        <button onclick="alert('Recap for ${h.time}:\\nFVG: ${h.analysisDetails?.fvg ? '🎯' : '❌'}\\nRSI: ${h.analysisDetails?.rsi ? '🎯' : '❌'}\\nTREND: ${h.analysisDetails?.trend ? '🎯' : '❌'}')" 
+                                style="background:none; border:1px solid #444; color:#888; font-size:10px; border-radius:4px; padding:2px 5px; cursor:pointer;">
+                            MORE
+                        </button>
+                    </td>
                 </tr>
             `).join('');
         }
