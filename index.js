@@ -13,12 +13,11 @@ app.use(express.static('public'));
 
 let lastClosePrice = 0;
 let prices = [];
-let prices1m = []; // מערך חדש לגרף דקה
+let prices1m = []; 
 let candles = [];
 let history = []; 
 let lockedDecision = null; 
 
-// פונקציה למשיכת מחיר מדד מדויק (Coinbase)
 async function getPolymarketPrice() {
     try {
         const response = await axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot');
@@ -35,7 +34,6 @@ async function getPolymarketPrice() {
     }
 }
 
-// --- חיבור לסטרים של דקה אחת (1m) לניתוח מהיר ---
 const binance1mWS = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_1m');
 binance1mWS.on('message', (data) => {
     const msg = JSON.parse(data);
@@ -67,26 +65,33 @@ binanceWS.on('message', async (data) => {
     if (prices.length > 200) prices.shift();
 
     const rsiVal = calculateRSI(prices);
-    const rsi1mVal = calculateRSI(prices1m); // RSI של דקה אחת
+    const rsi1mVal = calculateRSI(prices1m);
     const vwapVal = calculateVWAP(k);
-    const bb = calculateBollinger(prices);
     const fvg = detectFVG(k);
+    
+    const low = parseFloat(k.l);
+    const high = parseFloat(k.h);
+    const isLiquiditySweep = (price > low * 1.0001 && low < (candles.length > 0 ? candles[candles.length-1].l : low));
 
     const currentPriceForScore = indexPrice || price;
 
-    // --- לוגיקת נעילת החלטה ב-2.5 דקות (150 שניות לסיום) ---
-    if (secondsLeft <= 150 && !lockedDecision) {
-        // שקלול Score עם נתוני 1m
-        let scoreAtLock = calculateFinalScore({lastClose: lastClosePrice, secondsLeft: secondsLeft, fvg: fvg, rsi: rsiVal, trend: currentPriceForScore > vwapVal ? 'BULLISH' : 'BEARISH'}, currentPriceForScore, vwapVal, bb);
-        
-        // בונוס/קנס אם גרף דקה (1m) מסכים עם גרף 5 דקות
-        if (rsiVal > 50 && rsi1mVal > 50) scoreAtLock += 10;
-        if (rsiVal < 50 && rsi1mVal < 50) scoreAtLock -= 10;
+    // קבלת הניתוח המפורט
+    const analysisResult = calculateSMCScore({
+        lastClose: lastClosePrice, 
+        secondsLeft: secondsLeft, 
+        fvg: fvg, 
+        rsi: rsiVal, 
+        rsi1m: rsi1mVal,
+        trend: currentPriceForScore > vwapVal ? 'BULLISH' : 'BEARISH',
+        sweep: isLiquiditySweep
+    }, currentPriceForScore, vwapVal);
 
+    if (secondsLeft <= 150 && !lockedDecision) {
         lockedDecision = {
-            score: Math.min(99, Math.max(1, scoreAtLock)),
-            action: scoreAtLock >= 75 ? 'STRONG YES' : scoreAtLock <= 25 ? 'STRONG NO' : 'NEUTRAL',
-            time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            score: analysisResult.score,
+            action: analysisResult.score >= 70 ? 'STRONG YES' : analysisResult.score <= 30 ? 'STRONG NO' : 'NEUTRAL',
+            time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            reason: analysisResult.signal // הסיבה שננעלת
         };
     }
 
@@ -96,20 +101,21 @@ binanceWS.on('message', async (data) => {
         lastClose: lastClosePrice,
         secondsLeft: secondsLeft,
         rsi: rsiVal,
-        rsi1m: rsi1mVal, // נשלח לאתר להצגה בטרמינל
+        rsi1m: rsi1mVal,
         fvg: fvg,
         trend: currentPriceForScore > vwapVal ? 'BULLISH' : 'BEARISH',
         candle: { o: k.o, h: k.h, l: k.l, c: k.c },
         history: history,
         lockedDecision: lockedDecision, 
+        smcSignal: analysisResult.signal, // שליחת הסיבה בלייב
         analysis: { 
-            volatility: (parseFloat(k.h) - parseFloat(k.l)).toFixed(2),
+            volatility: (high - low).toFixed(2),
             volume: parseFloat(k.v).toFixed(2),
-            buyPressure: (currentPriceForScore > (parseFloat(k.h) + parseFloat(k.l)) / 2) ? 'HIGH' : 'LOW'
+            buyPressure: (currentPriceForScore > (high + low) / 2) ? 'HIGH' : 'LOW'
         }
     };
 
-    marketData.finalScore = lockedDecision ? lockedDecision.score : calculateFinalScore(marketData, currentPriceForScore, vwapVal, bb);
+    marketData.finalScore = lockedDecision ? lockedDecision.score : analysisResult.score;
     io.emit('marketUpdate', marketData);
 
     if (isFinal) {
@@ -128,28 +134,44 @@ binanceWS.on('message', async (data) => {
         lastClosePrice = finalPrice; 
         lockedDecision = null; 
 
-        candles.push({ h: parseFloat(k.h), l: parseFloat(k.l), c: price });
+        candles.push({ h: high, l: low, c: price });
         if (candles.length > 20) candles.shift();
     }
 });
 
-function calculateFinalScore(data, price, vwap, bb) {
-    const diff = price - data.lastClose;
-    const timeLeft = data.secondsLeft;
+function calculateSMCScore(data, price, vwap) {
     let score = 50;
-    const timeWeight = (300 - timeLeft) / 300; 
+    let signalParts = [];
+    const diff = price - data.lastClose;
 
-    let techScore = 0;
-    if (data.fvg === 'BULLISH') techScore += 10;
-    if (data.fvg === 'BEARISH') techScore -= 10;
-    if (data.rsi < 35) techScore += 15;
-    if (data.rsi > 65) techScore -= 15;
-    if (data.trend === 'BULLISH') techScore += 10; else techScore -= 10;
+    if (data.fvg !== 'NONE') {
+        score += (data.fvg === 'BULLISH' ? 20 : -20);
+        signalParts.push(`FVG ${data.fvg}`);
+    }
 
-    const distanceScore = diff > 0 ? 45 : -45;
-    score = 50 + (techScore * (1 - timeWeight)) + (distanceScore * timeWeight);
+    if (data.rsi > 55 && data.rsi1m > 55) {
+        score += 15;
+        signalParts.push("DUAL MOMENTUM 🟢");
+    } else if (data.rsi < 45 && data.rsi1m < 45) {
+        score -= 15;
+        signalParts.push("DUAL MOMENTUM 🔴");
+    }
 
-    return Math.min(99, Math.max(1, Math.round(score)));
+    if (data.sweep) {
+        score += 10;
+        signalParts.push("LIQ SWEEP ✅");
+    }
+
+    if (data.trend === 'BULLISH') score += 10; else score -= 10;
+
+    if (data.secondsLeft < 90) {
+        if (Math.abs(diff) > 15) signalParts.push("PRICE PRESSURE");
+    }
+
+    return {
+        score: Math.min(99, Math.max(1, Math.round(score))),
+        signal: signalParts.length > 0 ? signalParts.join(" | ") : "WAITING FOR SMC CONFIRMATION..."
+    };
 }
 
 function calculateRSI(values) {
@@ -164,12 +186,6 @@ function calculateVWAP(k) {
         close: [parseFloat(k.c)], volume: [parseFloat(k.v)]
     });
     return vwap[0] || parseFloat(k.c);
-}
-
-function calculateBollinger(values) {
-    if (values.length < 20) return { upper: 0, lower: 0 };
-    const result = BollingerBands.calculate({ period: 20, values: values.slice(-21), stdDev: 2 });
-    return result[result.length - 1] || { upper: 0, lower: 0 };
 }
 
 function detectFVG(k) {

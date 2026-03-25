@@ -284,13 +284,14 @@
             open: data.candle.o, high: data.candle.h, low: data.candle.l, close: data.price
         });
 
-        // עדכון טרמינל משופר (Multi-Timeframe)
+        // עדכון טרמינל משופר (Multi-Timeframe) עם שורת ה-SIGNAL
         const terminal = document.getElementById('live-terminal');
         const rsi1m = data.rsi1m ? data.rsi1m.toFixed(1) : "SCANNING";
         const trendIcon = data.trend === 'BULLISH' ? '▲' : '▼';
         
         terminal.innerHTML = `
             > INDEX: $${price.toFixed(2)} | VOL: ${data.analysis.volume}<br>
+            > SMC SIGNAL: <span style="color:var(--gold)">${data.smcSignal || "ANALYZING..."}</span><br>
             > 5M RSI: ${data.rsi.toFixed(1)} | 1M RSI: ${rsi1m}<br>
             > TREND: ${data.trend} ${trendIcon} | PWR: ${data.analysis.buyPressure}<br>
             > VOLATILITY: ${data.analysis.volatility} | FVG: ${data.fvg}<br>
