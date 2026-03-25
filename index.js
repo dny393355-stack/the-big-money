@@ -13,20 +13,35 @@ app.use(express.static('public'));
 
 let lastClosePrice = 0;
 let prices = [];
+let prices1m = []; // מערך חדש לגרף דקה
 let candles = [];
 let history = []; 
-let lockedDecision = null; // משתנה חדש לנעילת ההחלטה ב-2.5 דקות
+let lockedDecision = null; 
 
-async function getPythPrice() {
+// פונקציה למשיכת מחיר מדד מדויק (Coinbase)
+async function getPolymarketPrice() {
     try {
-        const pythPriceId = "0xe62df6c8b4a8599688d2590a39ec7847776324831ff3f73f35558f07aa9ca2bc";
-        const response = await axios.get(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${pythPriceId}`);
-        const priceData = response.data.parsed[0].price;
-        return parseFloat(priceData.price) * Math.pow(10, priceData.expo);
+        const response = await axios.get('https://api.coinbase.com/v2/prices/BTC-USD/spot');
+        return parseFloat(response.data.data.amount);
     } catch (error) {
-        return null;
+        try {
+            const pythPriceId = "0xe62df6c8b4a8599688d2590a39ec7847776324831ff3f73f35558f07aa9ca2bc";
+            const pythRes = await axios.get(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${pythPriceId}`);
+            const p = pythRes.data.parsed[0].price;
+            return parseFloat(p.price) * Math.pow(10, p.expo);
+        } catch (e) {
+            return null;
+        }
     }
 }
+
+// --- חיבור לסטרים של דקה אחת (1m) לניתוח מהיר ---
+const binance1mWS = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_1m');
+binance1mWS.on('message', (data) => {
+    const msg = JSON.parse(data);
+    prices1m.push(parseFloat(msg.k.c));
+    if (prices1m.length > 100) prices1m.shift();
+});
 
 const binanceWS = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_5m');
 
@@ -41,33 +56,37 @@ binanceWS.on('message', async (data) => {
     const nextBoundary = Math.ceil(now / msIn5Min) * msIn5Min;
     const secondsLeft = Math.floor((nextBoundary - now) / 1000);
 
-    const indexPrice = await getPythPrice();
+    const indexPrice = await getPolymarketPrice();
 
     if (!lastClosePrice || secondsLeft >= 299) {
         lastClosePrice = indexPrice || parseFloat(k.o);
-        lockedDecision = null; // איפוס הנעילה בסבב חדש
+        lockedDecision = null; 
     }
 
     prices.push(price);
     if (prices.length > 200) prices.shift();
 
     const rsiVal = calculateRSI(prices);
+    const rsi1mVal = calculateRSI(prices1m); // RSI של דקה אחת
     const vwapVal = calculateVWAP(k);
     const bb = calculateBollinger(prices);
-    const divergence = checkRSIDivergence(price, rsiVal);
     const fvg = detectFVG(k);
 
     const currentPriceForScore = indexPrice || price;
 
     // --- לוגיקת נעילת החלטה ב-2.5 דקות (150 שניות לסיום) ---
     if (secondsLeft <= 150 && !lockedDecision) {
-        const scoreAtLock = calculateFinalScore({lastClose: lastClosePrice, secondsLeft: secondsLeft, fvg: fvg, rsi: rsiVal, trend: price > vwapVal ? 'BULLISH' : 'BEARISH'}, currentPriceForScore, vwapVal, bb);
+        // שקלול Score עם נתוני 1m
+        let scoreAtLock = calculateFinalScore({lastClose: lastClosePrice, secondsLeft: secondsLeft, fvg: fvg, rsi: rsiVal, trend: currentPriceForScore > vwapVal ? 'BULLISH' : 'BEARISH'}, currentPriceForScore, vwapVal, bb);
         
+        // בונוס/קנס אם גרף דקה (1m) מסכים עם גרף 5 דקות
+        if (rsiVal > 50 && rsi1mVal > 50) scoreAtLock += 10;
+        if (rsiVal < 50 && rsi1mVal < 50) scoreAtLock -= 10;
+
         lockedDecision = {
-            score: scoreAtLock,
+            score: Math.min(99, Math.max(1, scoreAtLock)),
             action: scoreAtLock >= 75 ? 'STRONG YES' : scoreAtLock <= 25 ? 'STRONG NO' : 'NEUTRAL',
-            time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            reason: `RSI: ${rsiVal.toFixed(1)} | FVG: ${fvg} | DIST: ${(currentPriceForScore - lastClosePrice).toFixed(2)}`
+            time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
         };
     }
 
@@ -77,17 +96,16 @@ binanceWS.on('message', async (data) => {
         lastClose: lastClosePrice,
         secondsLeft: secondsLeft,
         rsi: rsiVal,
+        rsi1m: rsi1mVal, // נשלח לאתר להצגה בטרמינל
         fvg: fvg,
-        trend: price > vwapVal ? 'BULLISH' : 'BEARISH',
-        divergence: divergence,
-        liquiditySweep: price < parseFloat(k.l) * 1.0002,
+        trend: currentPriceForScore > vwapVal ? 'BULLISH' : 'BEARISH',
         candle: { o: k.o, h: k.h, l: k.l, c: k.c },
         history: history,
-        lockedDecision: lockedDecision, // שליחת ההחלטה הנעולה לאתר
-        analysis: { // נתונים לטרמינל הלייב
+        lockedDecision: lockedDecision, 
+        analysis: { 
             volatility: (parseFloat(k.h) - parseFloat(k.l)).toFixed(2),
             volume: parseFloat(k.v).toFixed(2),
-            buyPressure: (price > (parseFloat(k.h) + parseFloat(k.l)) / 2) ? 'HIGH' : 'LOW'
+            buyPressure: (currentPriceForScore > (parseFloat(k.h) + parseFloat(k.l)) / 2) ? 'HIGH' : 'LOW'
         }
     };
 
@@ -107,9 +125,8 @@ binanceWS.on('message', async (data) => {
         });
 
         if (history.length > 10) history.pop(); 
-
         lastClosePrice = finalPrice; 
-        lockedDecision = null; // איפוס סופי לסבב הבא
+        lockedDecision = null; 
 
         candles.push({ h: parseFloat(k.h), l: parseFloat(k.l), c: price });
         if (candles.length > 20) candles.shift();
@@ -119,12 +136,6 @@ binanceWS.on('message', async (data) => {
 function calculateFinalScore(data, price, vwap, bb) {
     const diff = price - data.lastClose;
     const timeLeft = data.secondsLeft;
-    const maxPossibleMove = timeLeft * 10; 
-
-    if (timeLeft < 20 && Math.abs(diff) > maxPossibleMove) {
-        return diff > 0 ? 99 : 1;
-    }
-
     let score = 50;
     const timeWeight = (300 - timeLeft) / 300; 
 
@@ -167,14 +178,6 @@ function detectFVG(k) {
     if (prev.h < parseFloat(k.l)) return 'BULLISH';
     if (prev.l > parseFloat(k.h)) return 'BEARISH';
     return 'NONE';
-}
-
-function checkRSIDivergence(price, rsi) {
-    if (prices.length < 2) return 'None';
-    const prevPrice = prices[prices.length - 2];
-    if (price > prevPrice && rsi < 45) return '🐻 Bearish';
-    if (price < prevPrice && rsi > 55) return '🐮 Bullish';
-    return 'None';
 }
 
 const PORT = process.env.PORT || 3000;

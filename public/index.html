@@ -165,17 +165,16 @@
         .history-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
         .history-table td { padding: 12px 5px; border-bottom: 1px solid #222; text-align: center; }
 
-        /* Terminal Style */
         .terminal-box {
             background: #080808;
             border: 1px dashed var(--gold);
             border-radius: 8px;
-            padding: 10px;
+            padding: 12px;
             margin-top: 15px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             color: #00ffaa;
-            line-height: 1.4;
+            line-height: 1.5;
         }
 
         @media (min-width: 768px) {
@@ -213,8 +212,8 @@
         </div>
 
         <div class="terminal-box" id="live-terminal">
-            > INITIALIZING ENGINE...<br>
-            > WAITING FOR DATA STREAM...
+            > INITIALIZING MULTI-TIMEFRAME ENGINE...<br>
+            > SCANNING 1M & 5M DATA STREAMS...
         </div>
 
         <div class="history-section">
@@ -241,7 +240,7 @@
             </div>
         </div>
 
-        <a id="main-btn" class="final-btn" href="https://polymarket.com/event/btc-updown-5m" target="_blank">ANALYZING...</a>
+        <a id="main-btn" class="final-btn" target="_blank">ANALYZING...</a>
     </div>
 </div>
 
@@ -285,12 +284,17 @@
             open: data.candle.o, high: data.candle.h, low: data.candle.l, close: data.price
         });
 
-        // עדכון טרמינל חי
+        // עדכון טרמינל משופר (Multi-Timeframe)
         const terminal = document.getElementById('live-terminal');
+        const rsi1m = data.rsi1m ? data.rsi1m.toFixed(1) : "SCANNING";
+        const trendIcon = data.trend === 'BULLISH' ? '▲' : '▼';
+        
         terminal.innerHTML = `
             > INDEX: $${price.toFixed(2)} | VOL: ${data.analysis.volume}<br>
-            > RSI: ${data.rsi.toFixed(1)} | FVG: ${data.fvg} | TREND: ${data.trend}<br>
-            ${data.lockedDecision ? `> <span style="color:var(--gold)">DECISION LOCKED [${data.lockedDecision.time}]</span>` : '> ANALYZING MARKET STRUCTURE...'}
+            > 5M RSI: ${data.rsi.toFixed(1)} | 1M RSI: ${rsi1m}<br>
+            > TREND: ${data.trend} ${trendIcon} | PWR: ${data.analysis.buyPressure}<br>
+            > VOLATILITY: ${data.analysis.volatility} | FVG: ${data.fvg}<br>
+            ${data.lockedDecision ? `> <span style="color:var(--gold)">DECISION LOCKED [${data.lockedDecision.time}]</span>` : '> SCANNING FOR MARKET WHALES...'}
         `;
 
         const score = data.finalScore;
@@ -304,15 +308,18 @@
         document.getElementById('timer').innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
         const btn = document.getElementById('main-btn');
-        // אם יש החלטה נעולה, הכפתור מציג אותה
+        const polyUrl = "https://polymarket.com/event/bitcoin-price-5-minute-intervals";
+
         if (data.lockedDecision) {
             const d = data.lockedDecision;
-            btn.innerHTML = `${d.action} (${d.score}%)`;
+            btn.innerHTML = `🚀 ${d.action} (${d.score}%)`;
+            btn.href = polyUrl;
             btn.style.background = d.score >= 50 ? 'var(--up)' : 'var(--down)';
             btn.style.color = d.score >= 50 ? 'black' : 'white';
             btn.className = 'final-btn neon-pulse';
         } else {
-            btn.innerHTML = `WAITING FOR LOCK (${data.secondsLeft}s)`;
+            btn.innerHTML = `⏳ SCANNING... (${data.secondsLeft}s)`;
+            btn.href = polyUrl;
             btn.style.background = '#222';
             btn.style.color = '#555';
             btn.className = 'final-btn';
